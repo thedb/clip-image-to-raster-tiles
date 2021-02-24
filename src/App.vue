@@ -1,7 +1,7 @@
 <template>
   <section>create raster tiles</section>
   <section>
-    <p>上传图片进行切片</p>
+    <p>上传图片进行切片<br>(支持多选)</p>
     <section class="img_input">
       <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
     </section>
