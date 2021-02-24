@@ -13,13 +13,20 @@
     </section>
     <br/>
     <br/>
-    <section v-show="clipStatus === 100">
+    <p v-show="clipStatus !== 100 && clipStatus !== 0">正在切片<br>当前切片进度{{clipStatus}}%</p>
+    <section v-show="currentTask === allTask && (zipProgress === 0 || zipProgress === 100)">
       <button @click="downloadImgsZip" >保存文件（单线程）</button>
       <br/>
       <br/>
       <button @click="generateTiles" >保存文件（web worker）</button>
     </section>
-    <p v-show="clipStatus !==100 && clipStatus !== 0">正在切片<br>当前切片进度{{clipStatus}}%</p>
+    <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
+      <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
+    </section>
+    <br/>
+    <br/>
+    <br/>
+    <br/>
   </section>
 </template>
 
@@ -63,7 +70,18 @@ export default {
       await rasterTile.addTiles(obj)
     }
     // web work保存zip文件
+    let zipProgress = ref(0);
+    const getProgress = async() => {
+      zipProgress.value = await rasterTile.getProgress();
+      const timer = setTimeout(async() => {
+        if (zipProgress.value !== 100) {
+          getProgress();
+        }
+        clearTimeout(timer);
+      }, 200)
+    }
     const generateTiles = async() => {
+      getProgress();
       const content = await rasterTile.generate();
       saveAs(content, `${zipName}.zip`);
       // await Thread.terminate(rasterTile);
@@ -73,6 +91,7 @@ export default {
       if (!file.length) {
         return
       }
+      uploadImgs.length = 0;
       allTask.value = file.length;
       currentTask.value = 0;
       // 支持图片多选
@@ -165,8 +184,9 @@ export default {
 
     const downloadImgsZip = () => {
       const start = performance.now();
-      zip.generateAsync({type:"blob"}, function updateCallback() {
+      zip.generateAsync({type:"blob"}, function updateCallback(metadata) {
         // console.log(`${metadata.percent}%`)
+        zipProgress.value = metadata.percent;
         console.log('time', performance.now() - start);
       }).then(function(content) {
         saveAs(content, `${zipName}.zip`);
@@ -180,6 +200,7 @@ export default {
       uploadImgs,
       allTask,
       currentTask,
+      zipProgress,
     }
   }
 }
@@ -214,6 +235,20 @@ export default {
     display: block;
     width: 200px;
     margin: 20px 20px;
+  }
+}
+.progress_bar{
+  width: 500px;
+  margin: 0 auto;
+  height: 24px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  overflow: hidden;
+  .progress_line{
+    height: 100%;
+    background: url(./assets/progress_line.jpg);
+    background-size: auto 100%;
+    border-radius: 20px;
   }
 }
 </style>

@@ -2,6 +2,7 @@ import { expose } from "threads/worker"
 self.importScripts('https://yk-static.oss-cn-shanghai.aliyuncs.com/lib/jszip.js')
 
 let JSZip;
+let progress = 0;
 
 const rasterTile = {
   init() {
@@ -15,15 +16,19 @@ const rasterTile = {
   },
   generate() {
     return new Promise((resolve) => {
-      const start = performance.now();
-      JSZip.generateAsync({type:"blob"}, function updateCallback() {
-        // console.log(`${metadata.percent}%`)
-        console.log('time', performance.now() - start);
+      progress = 0;
+      // const start = performance.now();
+      JSZip.generateAsync({type:"blob"}, function updateCallback(metadata) {
+        progress = metadata.percent;
+        // console.log('time', performance.now() - start);
       }).then(function(content) {
         resolve(content)
       });
 
     })
+  },
+  getProgress() {
+    return Math.floor(progress)
   },
   remove() {
     JSZip = null;
