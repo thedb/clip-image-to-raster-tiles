@@ -23,6 +23,7 @@
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
+    <p v-if="useTime">文件压缩总用时：{{useTime}}秒</p>
     <br/>
     <br/>
     <br/>
@@ -71,22 +72,30 @@ export default {
     }
     // web work保存zip文件
     let zipProgress = ref(0);
-    const getProgress = async() => {
-      zipProgress.value = await rasterTile.getProgress();
-      const timer = setTimeout(async() => {
-        if (zipProgress.value !== 100) {
-          getProgress();
+    const getProgress = () => {
+      zipProgress.value = 0;
+      const timer = setInterval(async() => {
+        zipProgress.value = await rasterTile.getProgress();
+        const performanceTime = await rasterTile.getPerformanceTime();
+        useTime.value = (performanceTime / 1000).toFixed(1);
+        if (zipProgress.value === 100) {
+          clearInterval(timer);
         }
-        clearTimeout(timer);
       }, 200)
     }
+    
+    let useTime = ref(null);
     const generateTiles = async() => {
+      useTime.value = null;
       getProgress();
       const content = await rasterTile.generate();
       saveAs(content, `${zipName}.zip`);
-      // await Thread.terminate(rasterTile);
     }
+    
     const changeUploadFile = async (e) => {
+      if (useTime.value) {
+        useTime.value = null;
+      }
       const file = e.target.files || e.dataTransfer.files;
       if (!file.length) {
         return
@@ -183,11 +192,13 @@ export default {
     }
 
     const downloadImgsZip = () => {
+      useTime.value = null;
       const start = performance.now();
       zip.generateAsync({type:"blob"}, function updateCallback(metadata) {
         // console.log(`${metadata.percent}%`)
         zipProgress.value = metadata.percent;
-        console.log('time', performance.now() - start);
+        let performanceTime = performance.now() - start;
+        useTime.value = (performanceTime / 1000).toFixed(1);
       }).then(function(content) {
         saveAs(content, `${zipName}.zip`);
       });
@@ -201,6 +212,7 @@ export default {
       allTask,
       currentTask,
       zipProgress,
+      useTime,
     }
   }
 }
