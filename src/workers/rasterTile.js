@@ -3,9 +3,19 @@ self.importScripts('https://yk-static.oss-cn-shanghai.aliyuncs.com/lib/jszip.js'
 
 let JSZip;
 let progress = 0;
-let performanceTime = null;
+// let performanceTime = null;
+let test = 0
 
 const rasterTile = {
+  add() {
+    test++;
+  },
+  show() {
+    console.log(test);
+  },
+  check() {
+    console.log(JSZip);
+  },
   init() {
     if (JSZip) {
       JSZip = null;
@@ -18,10 +28,10 @@ const rasterTile = {
   generate() {
     return new Promise((resolve) => {
       progress = 0;
-      const start = performance.now();
+      // const start = performance.now();
       JSZip.generateAsync({type:"blob"}, function updateCallback(metadata) {
         progress = metadata.percent;
-        performanceTime = performance.now() - start;
+        // performanceTime = performance.now() - start;
       }).then(function(content) {
         resolve(content)
       });
@@ -30,9 +40,9 @@ const rasterTile = {
   getProgress() {
     return Math.floor(progress)
   },
-  getPerformanceTime() {
-    return performanceTime;
-  },
+  // getPerformanceTime() {
+  //   return performanceTime;
+  // },
   remove() {
     JSZip = null;
   }

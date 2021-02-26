@@ -2,15 +2,6 @@
   <section>create raster tiles</section>
   <section>
     <p>上传图片进行切片<br>(支持多选)</p>
-    <br>
-    <p>当前选择: {{isMT ? '多线程': '单线程'}}</p>
-    <button style="margin: 0 30px" @click="isMT = false">单线程</button>
-    <button style="margin: 0 30px" @click="isMT = true">多线程</button>
-    <br>
-    <!-- <router-view v-slot="{ Component }">
-      <component :is="Component" />
-    </router-view> -->
-    <br>
     <section class="img_input">
       <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
     </section>
@@ -28,10 +19,7 @@
       <br/>
       <br/>
       <button @click="generateTiles" >保存文件（web worker）</button>
-      <br/>
-      <br/>
     </section>
-    <button @click="generateMTTiles" >多线程保存文件</button>
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
@@ -57,15 +45,13 @@ import {
 
 import { 
   spawn, 
-  Thread, 
+  // Thread, 
   Worker 
 } from "threads"
 
 export default {
   name: 'App',
   setup() {
-    // MT === MultiThreading;
-    let isMT = ref(false);
     let clipStatus = ref(0);
     let uploadImgs = reactive([]);
     let allTask = ref(null);
@@ -76,42 +62,24 @@ export default {
     zip = new JSZip();
     let rasterTile;
     
-    let MTCore = [];
-    const initMT = async() => {
-      const rasterTile = await spawn(new Worker("./workers/rasterTile"));
-      await rasterTile.init();
-      MTCore.push(rasterTile);
-    }
-
-    const MTAddTiles = async(i, obj) => {
-      await MTCore[i].addTiles(obj);
-    }
     const initWebWorker = async() => {
       rasterTile = await spawn(new Worker("./workers/rasterTile"));
       await rasterTile.init();
     }
-    
+    initWebWorker();
 
     const addTiles = async(obj) => {
       await rasterTile.addTiles(obj);
     }
     // web work保存zip文件
     let zipProgress = ref(0);
-    const getProgress = (threadCore) => {
+    const getProgress = () => {
+      zipProgress.value = 0;
       const timer = setInterval(async() => {
-        zipProgress.value = await threadCore.getProgress();
+        zipProgress.value = await rasterTile.getProgress();
+        const performanceTime = await rasterTile.getPerformanceTime();
+        useTime.value = (performanceTime / 1000).toFixed(1);
         if (zipProgress.value === 100) {
-          clearInterval(timer);
-        }
-      }, 200)
-    }
-    
-    const getMTProgress = (threadCore) => {
-      let threadCoreProgress = 0;
-      const timer = setInterval(async() => {
-        threadCoreProgress = await threadCore.getProgress();
-        zipProgress.value += Math.floor(threadCoreProgress / MTCore.length);
-        if (threadCoreProgress === 100) {
           clearInterval(timer);
         }
       }, 200)
@@ -119,35 +87,10 @@ export default {
 
     let useTime = ref(null);
     const generateTiles = async() => {
-      const start = performance.now();
-      zipProgress.value = 0;
       useTime.value = null;
-      getProgress(rasterTile);
+      getProgress();
       const content = await rasterTile.generate();
       saveAs(content, `${zipName}.zip`);
-      useTime.value = ((performance.now() - start) / 1000).toFixed(1);
-    }
-
-
-    const asyncCore = async(core) => {
-      const content = await core.generate();
-      return new Promise((resolve) => {
-        saveAs(content, `${zipName}.zip`);
-        resolve('success')
-      })
-    }
-    const generateMTTiles = async() => {
-      const start = performance.now();
-      zipProgress.value = 0;
-      useTime.value = null;
-      let MTCoreArr = [];
-      for(let i = 0; i < MTCore.length; i++) {
-        getMTProgress(MTCore[i]);
-        MTCoreArr.push(asyncCore(MTCore[i]));
-      }
-
-      await Promise.all(MTCoreArr);
-      useTime.value = ((performance.now() - start) / 1000).toFixed(1);
     }
     
     const changeUploadFile = async (e) => {
@@ -162,45 +105,13 @@ export default {
       allTask.value = file.length;
       currentTask.value = 0;
 
-      if (isMT.value) {
-        if (rasterTile) {
-          // clear 单线程
-          await Thread.terminate(rasterTile);
-          rasterTile.value = null;
-        }
-        // 多线程init
-        for (let i = 0; i < file.length; i++) {
-          initMT();
-        }
-        setTimeout(async() => {
-          // init 延迟
-          for (let i = 0; i < file.length; i++) {
-            const img = await blobToImg(file[i]);
-            const imgInfo = getImgInfo(img, file[i].name);
-            uploadImgs.push(img);
-            await createTiles(i, imgInfo);
-            currentTask.value++;
-          }
-        }, 200)
-      } else {
-        // 单线程
-        if (MTCore) {
-          // clear 多线程
-          for(let i = 0; i < MTCore.length; i++) {
-            await Thread.terminate(MTCore[i]);
-          }
-          MTCore.length = 0;
-        }
-        initWebWorker();
-        setTimeout(async() => {
-          for (let i = 0; i < file.length; i++) {
-            const img = await blobToImg(file[i]);
-            const imgInfo = getImgInfo(img, file[i].name);
-            uploadImgs.push(img);
-            await createTiles(null, imgInfo);
-            currentTask.value++;
-          }
-        }, 200)
+      // 支持图片多选
+      for (let i = 0; i < file.length; i++) {
+        const img = await blobToImg(file[i]);
+        const imgInfo = getImgInfo(img, file[i].name);
+        uploadImgs.push(img);
+        await createTiles(imgInfo);
+        currentTask.value++;
       }
     }
 
@@ -243,8 +154,7 @@ export default {
      * @param {Number} widthRatio imgWidth / referValue
      * @param {Number} heightRatio imgHeight / referValue
      */
-
-    const createTiles = async(core, {name, img, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
+    const createTiles = async({name, img, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
       let count = getCount(widthRatio, heightRatio);
       let totalClip = 0;
       for (let c = 0; c <= count; c++) {
@@ -259,6 +169,8 @@ export default {
         let tilesCav = document.createElement('canvas');
         tilesCav.width = widthRatio * referValue / Math.pow(2, c);
         tilesCav.height = heightRatio * referValue / Math.pow(2, c);
+        // console.log('tilesCav.width', tilesCav.width);
+        // console.log('tilesCav.height', tilesCav.height);
         const tilesCtx = tilesCav.getContext('2d');
         tilesCtx.drawImage(img, 0, 0, imgWidth / Math.pow(2, c), imgHeight / Math.pow(2, c));
         const referCav = document.createElement('canvas');
@@ -271,12 +183,8 @@ export default {
             currentClip++;
             referCtx.drawImage(tilesCav, -i * referValue, -k * referValue);
             let tilesBlob = await canvasToBlob(referCav);
-            if (core != null) {
-              MTAddTiles(core, {name, count, c, i, k, tilesBlob});
-            } else {
-              addTiles({name, count, c, i, k, tilesBlob});
-              zip.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
-            }
+            addTiles({name, count, c, i, k, tilesBlob});
+            zip.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
             referCtx.clearRect(0, 0, referValue, referValue);
             clipStatus.value = Math.floor(currentClip * 100 / totalClip);
           }
@@ -298,7 +206,6 @@ export default {
       });
     }
     return {
-      isMT,
       changeUploadFile,
       downloadImgsZip,
       generateTiles,
@@ -308,7 +215,6 @@ export default {
       currentTask,
       zipProgress,
       useTime,
-      generateMTTiles,
     }
   }
 }
