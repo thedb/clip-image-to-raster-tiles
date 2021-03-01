@@ -4,15 +4,17 @@
     <p>上传图片进行切片<br>(支持多选)</p>
     <br>
     <p>当前选择: {{isMT ? '多线程': '单线程'}}</p>
-    <button style="margin: 0 30px" @click="isMT = false">单线程</button>
-    <button style="margin: 0 30px" @click="isMT = true">多线程</button>
+    <section class="mt_choose" @click="changeThread">
+      <section class="mt_btn" :class="{is_mt: isMT}" ></section>
+    </section>
     <br>
     <!-- <router-view v-slot="{ Component }">
       <component :is="Component" />
     </router-view> -->
     <br>
     <section class="img_input">
-      <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
+      <input id="photoInput" class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
+      <!-- <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput"> -->
     </section>
     <br/>
     <br/>
@@ -23,7 +25,7 @@
     <br/>
     <br/>
     <p v-show="clipStatus !== 100 && clipStatus !== 0">正在切片<br>当前切片进度{{clipStatus}}%</p>
-    <section v-show="currentTask === allTask && (zipProgress === 0 || zipProgress === 100)">
+    <section v-show="!isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0">
       <button @click="downloadImgsZip" >保存文件（单线程）</button>
       <br/>
       <br/>
@@ -31,7 +33,7 @@
       <br/>
       <br/>
     </section>
-    <button @click="generateMTTiles" >多线程保存文件</button>
+    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="generateMTTiles" >多线程保存文件</button>
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
@@ -75,7 +77,37 @@ export default {
     let zip;
     zip = new JSZip();
     let rasterTile;
-    
+    const photoInput = ref(null)
+
+    const changeThread = async() => {
+      // reset
+      useTime.value = null;
+      zipProgress.value = 0;
+      allTask.value = 0;
+      currentTask.value = 0;
+      clipStatus.value = 0;
+      uploadImgs.length = 0;
+      if (photoInput.value) {
+        photoInput.value.value = null;
+      }
+      if (isMT.value) {
+        if (rasterTile) {
+          // clear 单线程
+          await Thread.terminate(rasterTile);
+          rasterTile.value = null;
+        }
+      } else {
+        if (MTCore) {
+          // clear 多线程
+          for(let i = 0; i < MTCore.length; i++) {
+            await Thread.terminate(MTCore[i]);
+          }
+          MTCore.length = 0;
+        }
+      }
+      isMT.value = !isMT.value;
+    }
+
     let MTCore = [];
     const initMT = async() => {
       const rasterTile = await spawn(new Worker("./workers/rasterTile"));
@@ -90,7 +122,6 @@ export default {
       rasterTile = await spawn(new Worker("./workers/rasterTile"));
       await rasterTile.init();
     }
-    
 
     const addTiles = async(obj) => {
       await rasterTile.addTiles(obj);
@@ -110,7 +141,12 @@ export default {
       let threadCoreProgress = 0;
       const timer = setInterval(async() => {
         threadCoreProgress = await threadCore.getProgress();
-        zipProgress.value += Math.floor(threadCoreProgress / MTCore.length);
+        let totalProgress = 0;
+        for (let k = 0; k < MTCore.length; k++) {
+          totalProgress += threadCoreProgress;
+          console.log(totalProgress)
+        }
+        zipProgress.value = totalProgress / MTCore.length;
         if (threadCoreProgress === 100) {
           clearInterval(timer);
         }
@@ -128,7 +164,6 @@ export default {
       useTime.value = ((performance.now() - start) / 1000).toFixed(1);
     }
 
-
     const asyncCore = async(core) => {
       const content = await core.generate();
       return new Promise((resolve) => {
@@ -136,6 +171,7 @@ export default {
         resolve('success')
       })
     }
+
     const generateMTTiles = async() => {
       const start = performance.now();
       zipProgress.value = 0;
@@ -163,12 +199,6 @@ export default {
       currentTask.value = 0;
 
       if (isMT.value) {
-        if (rasterTile) {
-          // clear 单线程
-          await Thread.terminate(rasterTile);
-          rasterTile.value = null;
-        }
-        // 多线程init
         for (let i = 0; i < file.length; i++) {
           initMT();
         }
@@ -184,13 +214,6 @@ export default {
         }, 200)
       } else {
         // 单线程
-        if (MTCore) {
-          // clear 多线程
-          for(let i = 0; i < MTCore.length; i++) {
-            await Thread.terminate(MTCore[i]);
-          }
-          MTCore.length = 0;
-        }
         initWebWorker();
         setTimeout(async() => {
           for (let i = 0; i < file.length; i++) {
@@ -298,6 +321,8 @@ export default {
       });
     }
     return {
+      photoInput,
+      changeThread,
       isMT,
       changeUploadFile,
       downloadImgsZip,
@@ -357,6 +382,26 @@ export default {
     background: url(./assets/progress_line.jpg);
     background-size: auto 100%;
     border-radius: 20px;
+    width: 0;
+  }
+}
+.mt_choose{
+  width: 60px;
+  height: 24px;
+  margin: 0 auto;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  cursor: pointer;
+  .mt_btn{
+    width: 24px;
+    height: 24px;
+    border-radius: 15px;
+    background-color: skyblue;
+    transition: all .5s ease-in-out;
+  }
+  .is_mt{
+    transform: translateX(36px);
+    background-color: #1eaf6d;
   }
 }
 </style>
