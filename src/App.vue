@@ -13,6 +13,7 @@
     </router-view> -->
     <br>
     <section class="img_input">
+      <img class="img_input_bg" src="./assets/plus.svg" alt="">
       <input id="photoInput" class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
       <!-- <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput"> -->
     </section>
@@ -353,10 +354,21 @@ export default {
   height: 200px;
   border: 1px solid #ddd;
   margin: 0 auto;
+  position: relative;
+  .img_input_bg{
+    width: 50px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
 }
 .control_input{
+  cursor: pointer;
   width: 100%;
   height: 100%;
+  opacity: 0;
 }
 .upload_imgs{
   width: 720px;
