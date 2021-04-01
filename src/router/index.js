@@ -2,15 +2,15 @@ import {
   createRouter, 
   createWebHashHistory,
 } from 'vue-router'
-import thread from '../views/thread.vue'
+// import thread from '../views/thread.vue'
 
 
 const routes = [
-  {
-    path: '/thread',
-    name: 'thread',
-    component: thread,
-  },
+  // {
+  //   path: '/thread',
+  //   name: 'thread',
+  //   component: thread,
+  // },
 ]
 
 const router = createRouter({

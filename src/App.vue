@@ -8,14 +8,9 @@
       <section class="mt_btn" :class="{is_mt: isMT}" ></section>
     </section>
     <br>
-    <!-- <router-view v-slot="{ Component }">
-      <component :is="Component" />
-    </router-view> -->
-    <br>
     <section class="img_input">
       <img class="img_input_bg" src="./assets/plus.svg" alt="">
       <input id="photoInput" class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput">
-      <!-- <input class="control_input" type="file" accept="image/*" v-on:change="changeUploadFile" multiple ref="photoInput"> -->
     </section>
     <br/>
     <br/>
@@ -39,7 +34,6 @@
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
     <p v-if="useTime">文件压缩总用时：{{useTime}}秒</p>
-    <br/>
     <br/>
     <br/>
     <br/>
@@ -209,6 +203,7 @@ export default {
             const img = await blobToImg(file[i]);
             const imgInfo = getImgInfo(img, file[i].name);
             uploadImgs.push(img);
+            // todo 能否多线程切割？
             await createTiles(i, imgInfo);
             currentTask.value++;
           }
@@ -269,8 +264,15 @@ export default {
      */
 
     const createTiles = async(core, {name, img, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
+      const referCav = document.createElement('canvas');
+      referCav.width = 256;
+      referCav.height = 256;
+      const referCtx = referCav.getContext('2d');
+      // 初始化切片用canvas，避免重复生成
       let count = getCount(widthRatio, heightRatio);
+      // 单个图片切片层数
       let totalClip = 0;
+      // 计算所有切片总数
       for (let c = 0; c <= count; c++) {
         for (let i = 0; i < widthRatio / Math.pow(2, c); i++) {
           for (let k = 0; k < heightRatio / Math.pow(2, c); k++) {
@@ -278,17 +280,14 @@ export default {
           }
         }
       }
-      let currentClip = 0;
+      let currentClip = 0; // 当前切片
       for (let c = 0; c <= count; c++) {
         let tilesCav = document.createElement('canvas');
         tilesCav.width = widthRatio * referValue / Math.pow(2, c);
         tilesCav.height = heightRatio * referValue / Math.pow(2, c);
         const tilesCtx = tilesCav.getContext('2d');
         tilesCtx.drawImage(img, 0, 0, imgWidth / Math.pow(2, c), imgHeight / Math.pow(2, c));
-        const referCav = document.createElement('canvas');
-        referCav.width = 256;
-        referCav.height = 256;
-        const referCtx = referCav.getContext('2d');
+        // 初始化层级用canvas
 
         for (let i = 0; i < widthRatio / Math.pow(2, c); i++) {
           for (let k = 0; k < heightRatio / Math.pow(2, c); k++) {
