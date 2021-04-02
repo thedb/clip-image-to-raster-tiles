@@ -3,7 +3,14 @@ self.importScripts('https://yk-static.oss-cn-shanghai.aliyuncs.com/lib/jszip.js'
 
 let JSZip;
 let progress = 0;
+let offscreenTile = null; // 小切片用
+let offscreenTileCtx = null;
 // let performanceTime = null;
+/**
+ * @param {Number} a 
+ * @param {Number} b 
+ * 计算需要切片多少次
+ */
 
 const rasterTile = {
   init() {
@@ -12,8 +19,50 @@ const rasterTile = {
     }
     JSZip = new self.JSZip();
   },
-  addTiles({name, count, c, i, k, tilesBlob}) {
-    JSZip.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
+  addTiles({name, count, countIndex, folderIndex, fileIndex, tilesBlob}) {
+    JSZip.folder(`${name}`).folder(`${count - countIndex}`).folder(`${folderIndex}`).file(`${fileIndex}.png`, tilesBlob, {binary: true});
+  },
+  offscreenInit(offscreen, widthRatio, heightRatio, count) {
+    offscreenTile = offscreen;
+    offscreenTileCtx = offscreenTile.getContext('2d');
+    // 单个图片切片层数
+    let totalClip = 0;
+    // 计算所有切片总数
+    for (let c = 0; c <= count; c++) {
+      for (let i = 0; i < widthRatio / Math.pow(2, c); i++) {
+        for (let k = 0; k < heightRatio / Math.pow(2, c); k++) {
+          totalClip++;
+        }
+      }
+    }
+    console.log(totalClip);
+    return
+  },
+  offscreenClip(imageBitmap, {name, imgWidth, imgHeight, referValue, widthRatio, heightRatio}, count) {
+    // let currentClip = 0;
+    for (let index = 0; index <= count; index++) {
+      for (let i = 0; i < widthRatio / Math.pow(2, index); i++) {
+        for (let k = 0; k < heightRatio / Math.pow(2, index); k++) {
+          // currentClip++;
+          offscreenTileCtx.drawImage(imageBitmap, -i * referValue, -k * referValue, imgWidth / Math.pow(2, index), imgHeight / Math.pow(2, index));
+          // referCtx.drawImage(tilesCav, -i * referValue, -k * referValue);
+          offscreenTile.convertToBlob()
+          .then(function(blob) {
+            // console.log('tilesBlob', blob)
+            rasterTile.addTiles({
+              name, 
+              count, 
+              countIndex: index, 
+              folderIndex: i, 
+              fileIndex: k, 
+              tilesBlob: blob
+            });
+          });
+          offscreenTileCtx.clearRect(0, 0, referValue, referValue);
+        }
+      }
+    }
+    // console.log(currentClip)
   },
   generate() {
     return new Promise((resolve) => {

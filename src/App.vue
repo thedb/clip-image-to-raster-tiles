@@ -55,14 +55,15 @@ import {
 import { 
   spawn, 
   Thread, 
-  Worker 
+  Worker,
+  Transfer,
 } from "threads"
 
 export default {
   name: 'App',
   setup() {
     // MT === MultiThreading;
-    let isMT = ref(false);
+    let isMT = ref(true);
     let clipStatus = ref(0);
     let uploadImgs = reactive([]);
     let allTask = ref(null);
@@ -121,6 +122,7 @@ export default {
     const addTiles = async(obj) => {
       await rasterTile.addTiles(obj);
     }
+
     // web work保存zip文件
     let zipProgress = ref(0);
     const getProgress = (threadCore) => {
@@ -159,7 +161,7 @@ export default {
       useTime.value = ((performance.now() - start) / 1000).toFixed(1);
     }
 
-    const asyncCore = async(core) => {
+    const asyncCoreGenerate = async(core) => {
       const content = await core.generate();
       return new Promise((resolve) => {
         saveAs(content, `${zipName}.zip`);
@@ -174,7 +176,7 @@ export default {
       let MTCoreArr = [];
       for(let i = 0; i < MTCore.length; i++) {
         getMTProgress(MTCore[i]);
-        MTCoreArr.push(asyncCore(MTCore[i]));
+        MTCoreArr.push(asyncCoreGenerate(MTCore[i]));
       }
 
       await Promise.all(MTCoreArr);
@@ -182,6 +184,7 @@ export default {
     }
     
     const changeUploadFile = async (e) => {
+      let test = performance.now();
       if (useTime.value) {
         useTime.value = null;
       }
@@ -199,24 +202,33 @@ export default {
         }
         setTimeout(async() => {
           // init 延迟
+          let MTCoreArr = [];
+
           for (let i = 0; i < file.length; i++) {
             const img = await blobToImg(file[i]);
             const imgInfo = getImgInfo(img, file[i].name);
             uploadImgs.push(img);
             // todo 能否多线程切割？
-            await createTiles(i, imgInfo);
+            await createTiles(i, img, imgInfo); 
+            // 单线程切割
+
+            // MTCoreArr.push(asyncCoreOffscreen(MTCore[i], img, imgInfo)); 
+            // 多线程切割
             currentTask.value++;
           }
+          await Promise.all(MTCoreArr);
+          console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - test).toFixed() + 'ms');
         }, 200)
       } else {
         // 单线程
         initWebWorker();
+        // 等待worker init完成
         setTimeout(async() => {
           for (let i = 0; i < file.length; i++) {
             const img = await blobToImg(file[i]);
             const imgInfo = getImgInfo(img, file[i].name);
             uploadImgs.push(img);
-            await createTiles(null, imgInfo);
+            await createTiles(null, img, imgInfo);
             currentTask.value++;
           }
         }, 200)
@@ -235,7 +247,6 @@ export default {
       const heightRatio = Math.ceil(imgHeight / referValue);
       return {
         name,
-        img,
         referValue,
         imgWidth,
         imgHeight,
@@ -253,6 +264,23 @@ export default {
       return a >= b ? Math.ceil(Math.log2(a)) : Math.ceil(Math.log2(b));
     }
 
+
+    const asyncCoreOffscreen = async(core, img, imgInfo) => {
+      console.log('imgInfo',imgInfo)
+      await offscreenCreateTiles(core, img, imgInfo);
+      return new Promise((resolve) => {
+        resolve('success')
+      })
+    }
+    const offscreenCreateTiles = async(core, img, imgInfo) => {
+      const offscreenCav = new OffscreenCanvas(256, 256);
+      let count = getCount(imgInfo.widthRatio, imgInfo.heightRatio);
+      await core.offscreenInit(Transfer(offscreenCav), imgInfo.widthRatio, imgInfo.heightRatio, count);
+      // let currentClip = 0; // 当前切片
+      let imageBitmap = await createImageBitmap(img, 0, 0, imgInfo.imgWidth, imgInfo.imgHeight);
+      await core.offscreenClip(Transfer(imageBitmap), imgInfo, count);
+    }
+
     /**
      * @param {String} name
      * @param {object} img
@@ -262,8 +290,8 @@ export default {
      * @param {Number} widthRatio imgWidth / referValue
      * @param {Number} heightRatio imgHeight / referValue
      */
-
-    const createTiles = async(core, {name, img, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
+    const createTiles = async(core, img, {name, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
+      // console.log(core)
       const referCav = document.createElement('canvas');
       referCav.width = 256;
       referCav.height = 256;
@@ -280,22 +308,26 @@ export default {
           }
         }
       }
+      // console.log('createTiles', totalClip)
+
+      // return
       let currentClip = 0; // 当前切片
       for (let c = 0; c <= count; c++) {
-        let tilesCav = document.createElement('canvas');
-        tilesCav.width = widthRatio * referValue / Math.pow(2, c);
-        tilesCav.height = heightRatio * referValue / Math.pow(2, c);
-        const tilesCtx = tilesCav.getContext('2d');
-        tilesCtx.drawImage(img, 0, 0, imgWidth / Math.pow(2, c), imgHeight / Math.pow(2, c));
-        // 初始化层级用canvas
-
         for (let i = 0; i < widthRatio / Math.pow(2, c); i++) {
           for (let k = 0; k < heightRatio / Math.pow(2, c); k++) {
             currentClip++;
-            referCtx.drawImage(tilesCav, -i * referValue, -k * referValue);
+            referCtx.drawImage(img, -i * referValue, -k * referValue, imgWidth / Math.pow(2, c), imgHeight / Math.pow(2, c));
+            // referCtx.drawImage(tilesCav, -i * referValue, -k * referValue);
             let tilesBlob = await canvasToBlob(referCav);
             if (core != null) {
-              MTAddTiles(core, {name, count, c, i, k, tilesBlob});
+              MTAddTiles(core, {
+                name, 
+                count, 
+                countIndex: c, 
+                folderIndex: i, 
+                fileIndex: k, 
+                tilesBlob
+              });
             } else {
               addTiles({name, count, c, i, k, tilesBlob});
               zip.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
@@ -304,7 +336,6 @@ export default {
             clipStatus.value = Math.floor(currentClip * 100 / totalClip);
           }
         }
-        tilesCav = null;
       }
     }
 
