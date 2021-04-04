@@ -209,10 +209,10 @@ export default {
             const imgInfo = getImgInfo(img, file[i].name);
             uploadImgs.push(img);
             // todo 能否多线程切割？
-            await createTiles(i, img, imgInfo); 
+            // await createTiles(i, img, imgInfo); 
             // 单线程切割
 
-            // MTCoreArr.push(asyncCoreOffscreen(MTCore[i], img, imgInfo)); 
+            MTCoreArr.push(asyncCoreOffscreen({core: MTCore[i], img, imgInfo})); 
             // 多线程切割
             currentTask.value++;
           }
@@ -264,21 +264,21 @@ export default {
       return a >= b ? Math.ceil(Math.log2(a)) : Math.ceil(Math.log2(b));
     }
 
-
-    const asyncCoreOffscreen = async(core, img, imgInfo) => {
-      console.log('imgInfo',imgInfo)
-      await offscreenCreateTiles(core, img, imgInfo);
+    /**
+     * @param {Number} core 核心下标
+     * @param {object} img 切片图片
+     * @param {object} imgInfo 图片基本信息
+     */
+    const asyncCoreOffscreen = async({core, img, imgInfo}) => {
+      await offscreenCreateTiles({core, img, imgInfo});
       return new Promise((resolve) => {
         resolve('success')
       })
     }
-    const offscreenCreateTiles = async(core, img, imgInfo) => {
+    const offscreenCreateTiles = async({core, img, imgInfo}) => {
       const offscreenCav = new OffscreenCanvas(256, 256);
-      let count = getCount(imgInfo.widthRatio, imgInfo.heightRatio);
-      await core.offscreenInit(Transfer(offscreenCav), imgInfo.widthRatio, imgInfo.heightRatio, count);
-      // let currentClip = 0; // 当前切片
-      let imageBitmap = await createImageBitmap(img, 0, 0, imgInfo.imgWidth, imgInfo.imgHeight);
-      await core.offscreenClip(Transfer(imageBitmap), imgInfo, count);
+      const imageBitmap = await createImageBitmap(img, 0, 0, imgInfo.imgWidth, imgInfo.imgHeight);
+      await core.offscreenClip(Transfer(offscreenCav), Transfer(imageBitmap), imgInfo);
     }
 
     /**
@@ -291,7 +291,6 @@ export default {
      * @param {Number} heightRatio imgHeight / referValue
      */
     const createTiles = async(core, img, {name, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
-      // console.log(core)
       const referCav = document.createElement('canvas');
       referCav.width = 256;
       referCav.height = 256;
@@ -308,16 +307,12 @@ export default {
           }
         }
       }
-      // console.log('createTiles', totalClip)
-
-      // return
       let currentClip = 0; // 当前切片
       for (let c = 0; c <= count; c++) {
         for (let i = 0; i < widthRatio / Math.pow(2, c); i++) {
           for (let k = 0; k < heightRatio / Math.pow(2, c); k++) {
             currentClip++;
             referCtx.drawImage(img, -i * referValue, -k * referValue, imgWidth / Math.pow(2, c), imgHeight / Math.pow(2, c));
-            // referCtx.drawImage(tilesCav, -i * referValue, -k * referValue);
             let tilesBlob = await canvasToBlob(referCav);
             if (core != null) {
               MTAddTiles(core, {
@@ -343,7 +338,6 @@ export default {
       useTime.value = null;
       const start = performance.now();
       zip.generateAsync({type:"blob"}, function updateCallback(metadata) {
-        // console.log(`${metadata.percent}%`)
         zipProgress.value = metadata.percent;
         let performanceTime = performance.now() - start;
         useTime.value = (performanceTime / 1000).toFixed(1);
