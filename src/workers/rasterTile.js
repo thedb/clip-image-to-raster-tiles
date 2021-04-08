@@ -48,14 +48,13 @@ const rasterTile = {
         }
       }
     }
+    // console.log(currentClip)
   },
   generate() {
     return new Promise((resolve) => {
       progress = 0;
-      // const start = performance.now();
-      JSZip.generateAsync({type:"blob"}, function updateCallback(metadata) {
+      JSZip.generateAsync({type: 'blob'}, function updateCallback(metadata) {
         progress = metadata.percent;
-        // performanceTime = performance.now() - start;
       }).then(function(content) {
         resolve(content)
       });
