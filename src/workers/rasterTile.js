@@ -15,6 +15,9 @@ const rasterTile = {
     }
     JSZip = new self.JSZip();
   },
+  debugger() {
+    console.log(JSZip);
+  },
   addTiles({name, count, countIndex, folderIndex, fileIndex, tilesBlob}) {
     JSZip.folder(`${name}`).folder(`${count - countIndex}`).folder(`${folderIndex}`).file(`${fileIndex}.png`,
     tilesBlob,
@@ -53,11 +56,13 @@ const rasterTile = {
   generate() {
     return new Promise((resolve) => {
       progress = 0;
-      JSZip.generateAsync({type: 'blob'}, function updateCallback(metadata) {
-        progress = metadata.percent;
-      }).then(function(content) {
-        resolve(content)
-      });
+      setTimeout(() => {
+        JSZip.generateAsync({type: 'blob'}, function updateCallback(metadata) {
+          progress = metadata.percent;
+        }).then(function(content) {
+          resolve(content);
+        });
+      }, 0)
     })
   },
   getProgress() {

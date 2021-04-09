@@ -30,6 +30,7 @@
       <br/>
     </section>
     <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="generateMTTiles" >多线程保存文件</button>
+    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="poolGenerate" >pool线程保存文件</button>
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
@@ -63,6 +64,7 @@ import {
 export default {
   name: 'App',
   setup() {
+    // ST === SingleThreading;
     // MT === MultiThreading;
     let isMT = ref(true);
     let clipStatus = ref(0);
@@ -105,11 +107,11 @@ export default {
       isMT.value = !isMT.value;
     }
 
-    let workerPool;
     
+    let workerPool;
     const initPool = async() => {
       workerPool = Pool(() => spawn(new Worker("./workers/rasterTile")), {
-        concurrency: 8, // 同时运行任务数
+        concurrency: 100, // 同时运行任务数
         // size: 8 // 要产生的工作程序数量，默认为CPU内核数量
       });
       return new Promise((resolve) => {
@@ -132,32 +134,31 @@ export default {
         const offscreenCav = new OffscreenCanvas(256, 256);
         const imageBitmap = await createImageBitmap(img, 0, 0, imgInfo.imgWidth, imgInfo.imgHeight);
         await worker.offscreenClip(Transfer(offscreenCav), Transfer(imageBitmap), imgInfo);
-        // const content = await worker.generate();
-        // saveAs(content, `${zipName}.zip`);
         uploadImgs.push(img);
+        currentTask.value++;
       });
-      task.then(result => {
-        console.log(result)
-        console.log('task', task)
-      })
       return task
     }
 
 
     let MTCore = [];
+    const initST = async(i, file) => {
+      const rasterTile = await spawn(new Worker("./workers/rasterTile"));
+      await rasterTile.init();
+      MTCore.push(rasterTile);
+    }
     const initMT = async(file) => {
       const img = await blobToImg(file);
       const imgInfo = getImgInfo(img, file.name);
       const rasterTile = await spawn(new Worker("./workers/rasterTile"));
       await rasterTile.init();
       MTCore.push(rasterTile);
-      // todo 能否多线程切割？
-      // await createTiles(i, img, imgInfo); 
-      // 单线程切割
-
       await asyncOffscreenCreateTiles({core: rasterTile, img, imgInfo}); 
       // 多线程切割
       currentTask.value++;
+
+      // const content = await rasterTile.generate();
+      // saveAs(content, `${zipName}.zip`);
       uploadImgs.push(img);
       return new Promise((resolve) => {
         resolve()
@@ -227,18 +228,30 @@ export default {
       zipProgress.value = 0;
       useTime.value = null;
       let MTCoreArr = [];
+      console.log('length', MTCore.length);
       for(let i = 0; i < MTCore.length; i++) {
-        getMTProgress(MTCore[i]);
+        // getMTProgress(MTCore[i]);
         MTCoreArr.push(asyncCoreGenerate(MTCore[i]));
       }
 
       await Promise.all(MTCoreArr);
-      useTime.value = ((performance.now() - start) / 1000).toFixed(1);
+      // useTime.value = ((performance.now() - start) / 1000).toFixed(1);
+      console.log(`共下载${allTask.value}个文件，共耗时：`, (performance.now() - start).toFixed() + 'ms');
+    }
+    const poolGenerate = async() => {
+      const start = performance.now();
+      workerPool.queue(async(worker) => {
+        console.log(worker.debugger());
+        const content = await worker.generate();
+        saveAs(content, `${zipName}.zip`);
+      });
+      await workerPool.completed();
+      await workerPool.terminate();
+      console.log(`共下载${allTask.value}个文件，共耗时：`, (performance.now() - start).toFixed() + 'ms');
     }
     
     const changeUploadFile = async (e) => {
       MTCore = [];
-      let startTime = performance.now();
       if (useTime.value) {
         useTime.value = null;
       }
@@ -251,22 +264,19 @@ export default {
       currentTask.value = 0;
 
       if (isMT.value) {
-        // ---------- todo 一次性多线程切割+保存
-        // await initPool();
-        // let poolCore = [];
-        // for (let i = 0; i < file.length; i++) {
-        //   poolCore.push(usePool(file[i]));
-        // }
-        // await Promise.all(poolCore);
-        // console.log(poolCore)
-        // console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
-        // ---------- default
-        const asyncMTCore = [];
+        // ---------- pool线程切割
+        await initPool();
+        const startTime = performance.now();
+        let poolCore = [];
         for (let i = 0; i < file.length; i++) {
-          asyncMTCore.push(initMT(file[i]));
+          poolCore.push(usePool(file[i]));
         }
-        await Promise.all(asyncMTCore);
+        await Promise.all(poolCore);
         console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
+
+        // ---------- default
+        // STClip(file); // 单线程
+        // MTClip(file); // 多线程
       } else {
         // 单线程
         await initWebWorker();
@@ -280,6 +290,34 @@ export default {
       }
     }
 
+    const STClip = async(file) => {
+      let startTime = performance.now();
+      const asyncSTCore = [];
+      for (let i = 0; i < file.length; i++) {
+        asyncSTCore.push(initST(i, file[i]));
+      }
+      await Promise.all(asyncSTCore);
+      for (let i = 0; i < file.length; i++) {
+        const img = await blobToImg(file[i]);
+        const imgInfo = getImgInfo(img, file[i].name);
+        uploadImgs.push(img);
+        await createTiles(i, img, imgInfo); 
+        // 单线程切割
+        currentTask.value++;
+      }
+      console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
+    }
+
+    const MTClip = async(file) => {
+      let startTime = performance.now();
+      const asyncMTCore = [];
+      for (let i = 0; i < file.length; i++) {
+        asyncMTCore.push(initMT(file[i]));
+      }
+      await Promise.all(asyncMTCore);
+
+      console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
+    }
     /**
      * @param {object} img blob转换的img对象
      * @param {string} name blob转换img会丢失文件原本的名字，压缩文件需要区分各个文件名，所以在input的时候要带上
@@ -401,6 +439,7 @@ export default {
       zipProgress,
       useTime,
       generateMTTiles,
+      poolGenerate
     }
   }
 }
