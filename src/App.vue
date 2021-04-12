@@ -29,6 +29,7 @@
       <br/>
       <br/>
     </section>
+    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="check" >查看多线程</button>
     <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="generateMTTiles" >多线程保存文件</button>
     <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="poolGenerate" >pool线程保存文件</button>
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
@@ -105,6 +106,12 @@ export default {
         }
       }
       isMT.value = !isMT.value;
+    }
+    const check = () => {
+      console.log(MTCore);
+      for(let i = 0; i < MTCore.length; i++){
+        MTCore[i].debugger();
+      }
     }
 
     
@@ -217,6 +224,8 @@ export default {
 
     const asyncCoreGenerate = async(core) => {
       const content = await core.generate();
+      // core.debugger();
+      await Thread.terminate(core);
       return new Promise((resolve) => {
         saveAs(content, `${zipName}.zip`);
         resolve('success')
@@ -228,7 +237,6 @@ export default {
       zipProgress.value = 0;
       useTime.value = null;
       let MTCoreArr = [];
-      console.log('length', MTCore.length);
       for(let i = 0; i < MTCore.length; i++) {
         // getMTProgress(MTCore[i]);
         MTCoreArr.push(asyncCoreGenerate(MTCore[i]));
@@ -265,17 +273,17 @@ export default {
 
       if (isMT.value) {
         // ---------- pool线程切割
-        await initPool();
-        const startTime = performance.now();
-        let poolCore = [];
-        for (let i = 0; i < file.length; i++) {
-          poolCore.push(usePool(file[i]));
-        }
-        await Promise.all(poolCore);
-        console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
+        // await initPool();
+        // const startTime = performance.now();
+        // let poolCore = [];
+        // for (let i = 0; i < file.length; i++) {
+        //   poolCore.push(usePool(file[i]));
+        // }
+        // await Promise.all(poolCore);
+        // console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
 
         // ---------- default
-        // STClip(file); // 单线程
+        STClip(file); // 单线程
         // MTClip(file); // 多线程
       } else {
         // 单线程
@@ -439,7 +447,8 @@ export default {
       zipProgress,
       useTime,
       generateMTTiles,
-      poolGenerate
+      poolGenerate,
+      check
     }
   }
 }
