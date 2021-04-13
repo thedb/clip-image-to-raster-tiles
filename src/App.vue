@@ -259,6 +259,10 @@ export default {
     }
     
     const changeUploadFile = async (e) => {
+      if (workerPool) {
+        await workerPool.terminate(true);
+        // 强制清除线程
+      }
       MTCore = [];
       if (useTime.value) {
         useTime.value = null;
@@ -272,22 +276,14 @@ export default {
       currentTask.value = 0;
 
       if (isMT.value) {
-        // ---------- pool线程切割
-        // await initPool();
-        // const startTime = performance.now();
-        // let poolCore = [];
-        // for (let i = 0; i < file.length; i++) {
-        //   poolCore.push(usePool(file[i]));
-        // }
-        // await Promise.all(poolCore);
-        // console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
-
+        // poolClip(file); // 线程池切割
         // ---------- default
-        STClip(file); // 单线程
-        // MTClip(file); // 多线程
+        // STClip(file); // 浏览器切割
+        MTClip(file); // 多线程切割
       } else {
         // 单线程
         await initWebWorker();
+        const startTime = performance.now();
         for (let i = 0; i < file.length; i++) {
           const img = await blobToImg(file[i]);
           const imgInfo = getImgInfo(img, file[i].name);
@@ -295,7 +291,19 @@ export default {
           await createTiles(null, img, imgInfo);
           currentTask.value++;
         }
+        console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
       }
+    }
+    const poolClip = async(file) => {
+      //pool线程切割
+      await initPool();
+      const startTime = performance.now();
+      let poolCore = [];
+      for (let i = 0; i < file.length; i++) {
+        poolCore.push(usePool(file[i]));
+      }
+      await Promise.all(poolCore);
+      console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
     }
 
     const STClip = async(file) => {
