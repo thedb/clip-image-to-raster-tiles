@@ -107,13 +107,24 @@ export default {
       }
       isMT.value = !isMT.value;
     }
-    const check = () => {
+    const check = async() => {
       console.log(MTCore);
-      for(let i = 0; i < MTCore.length; i++){
-        MTCore[i].debugger();
+      const startTime = performance.now();
+      const checkArr = [];
+      for(let i = 0; i < MTCore.length; i++) {
+        checkArr.push(checkCore(MTCore[i]));
       }
-    }
 
+      await Promise.all(checkArr);
+      console.log('all time:',(performance.now() - startTime).toFixed() + 'ms');
+    }
+    const checkCore = async(core) => {
+      const debuggerInfo = await core.fibonacci(40);
+      return new Promise((resolve) => {
+        console.log(debuggerInfo);
+        resolve();
+      })
+    }
     
     let workerPool;
     const initPool = async() => {

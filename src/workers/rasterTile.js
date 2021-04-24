@@ -9,6 +9,12 @@ const referValue = 256;
 // let performanceTime = null;
 
 const rasterTile = {
+  fibonacci(n) {
+    if (n == 1 || n == 2) {
+      return 1
+    }
+    return rasterTile.fibonacci(n - 2) + rasterTile.fibonacci(n - 1)
+  },
   init() {
     if (JSZip) {
       JSZip = null;
