@@ -238,11 +238,14 @@ export default {
       // core.debugger();
       await Thread.terminate(core);
       return new Promise((resolve) => {
-        saveAs(content, `${zipName}.zip`);
+        // saveAs(content, `${zipName}.zip`);
+        console.log(content);
+        allBlob.push(content);
+        zip.file(`${Math.random()*100}.zip`, content, {binary: true});
         resolve('success')
       })
     }
-
+    const allBlob = [];
     const generateMTTiles = async() => {
       const start = performance.now();
       zipProgress.value = 0;
@@ -254,8 +257,21 @@ export default {
       }
 
       await Promise.all(MTCoreArr);
+
+      await saveZip();
+      // console.log(allBlob);
+      // const allFile = new Blob(allBlob, {type: "application/zip"});
+      // saveAs(allFile, `${zipName}.zip`);
       // useTime.value = ((performance.now() - start) / 1000).toFixed(1);
       console.log(`共下载${allTask.value}个文件，共耗时：`, (performance.now() - start).toFixed() + 'ms');
+    }
+    const saveZip = () => {
+      return new Promise((resolve) => {
+        zip.generateAsync({type:"blob"}).then(function(content) {
+          saveAs(content, `${zipName}.zip`);
+          resolve();
+        });
+      })
     }
     const poolGenerate = async() => {
       const start = performance.now();
