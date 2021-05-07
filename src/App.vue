@@ -3,10 +3,15 @@
   <section>
     <p>上传图片进行切片<br>(支持多选)</p>
     <br>
-    <p>当前选择: {{isMT ? '多线程': '单线程'}}</p>
-    <section class="mt_choose" @click="changeThread">
-      <section class="mt_btn" :class="{is_mt: isMT}" ></section>
+    <section class="select_threading">
+      <section class="select_btn" :class="{btn_selected: selectThreading === 0}" @click="chooseThread(0)">单线程切割+单线程保存</section>
+      <section class="select_btn" :class="{btn_selected: selectThreading === 1}" @click="chooseThread(1)">单线程切割+多线程保存</section>
+      <section class="select_btn" :class="{btn_selected: selectThreading === 2}" @click="chooseThread(2)">线程池切割+线程池保存</section>
+      <section class="select_btn" :class="{btn_selected: selectThreading === 3}" @click="chooseThread(3)">全部多线程</section>
     </section>
+    <!-- <p>当前选择: {{selectThreading}}</p> -->
+    <br>
+    <br>
     <br>
     <section class="img_input">
       <img class="img_input_bg" src="./assets/plus.svg" alt="">
@@ -21,17 +26,14 @@
     <br/>
     <br/>
     <p v-show="clipStatus !== 100 && clipStatus !== 0">正在切片<br>当前切片进度{{clipStatus}}%</p>
-    <section v-show="!isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0">
-      <button @click="downloadImgsZip" >保存文件（单线程）</button>
+    <section v-show="selectThreading === 0 &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0">
+      <button @click="downloadImgsZip" >单线程保存文件</button>
       <br/>
-      <br/>
-      <button @click="generateTiles" >保存文件（web worker）</button>
-      <br/>
-      <br/>
+      <br/> -->
     </section>
-    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="check" >查看多线程</button>
-    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="generateMTTiles" >多线程保存文件</button>
-    <button v-show="isMT &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="poolGenerate" >pool线程保存文件</button>
+    <button v-show="selectThreading !== 0 &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="check" >查看多线程</button>
+    <button v-show="selectThreading !== 0 &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="generateMTTiles" >多线程保存文件</button>
+    <button v-show="selectThreading !== 0 &&currentTask === allTask && (zipProgress === 0 || zipProgress === 100) && allTask !== 0" @click="poolGenerate" >pool线程保存文件</button>
     <section class="progress_bar" v-if="zipProgress !== 0 && zipProgress !== 100">
       <section :style="{width: `${zipProgress}%`}" class="progress_line" ></section>
     </section>
@@ -47,6 +49,13 @@ import {
   blobToImg,
   canvasToBlob,
 } from 'jason-lib-pkg'
+import {
+  getCount,
+  getImgInfo,
+  initMT,
+  initST,
+} from './assets/export/index.js'
+
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import {
@@ -67,19 +76,25 @@ export default {
   setup() {
     // ST === SingleThreading;
     // MT === MultiThreading;
-    let isMT = ref(true);
+    let selectThreading = ref(0); 
+    // 0 全部单线程
+    // 1 浏览器单线程&web worker
+    // 2 线程池切割
+    // 3 多线程切割
+    // let isMT = ref(true);
     let clipStatus = ref(0);
     let uploadImgs = reactive([]);
     let allTask = ref(null);
     let currentTask = ref(0);
 
     const zipName = 'raster tiles';
-    let zip;
-    zip = new JSZip();
+    let zipTool;
+    zipTool = new JSZip();
     let rasterTile;
     const photoInput = ref(null)
 
-    const changeThread = async() => {
+    const chooseThread = async(index) => {
+      selectThreading.value = index;
       // reset
       useTime.value = null;
       zipProgress.value = 0;
@@ -90,22 +105,21 @@ export default {
       if (photoInput.value) {
         photoInput.value.value = null;
       }
-      if (isMT.value) {
+      if (selectThreading.value === 0) {
+        // clear 单线程
         if (rasterTile) {
-          // clear 单线程
           await Thread.terminate(rasterTile);
           rasterTile.value = null;
         }
       } else {
+        // clear 多线程
         if (MTCore) {
-          // clear 多线程
           for(let i = 0; i < MTCore.length; i++) {
             await Thread.terminate(MTCore[i]);
           }
           MTCore.length = 0;
         }
       }
-      isMT.value = !isMT.value;
     }
     const check = async() => {
       console.log(MTCore);
@@ -137,13 +151,6 @@ export default {
       })
     }
 
-    const sleep = async(time) => {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve()
-        }, time)
-      })
-    }
     const usePool = async(file) => {
       const img = await blobToImg(file);
       const imgInfo = getImgInfo(img, file.name);
@@ -160,31 +167,9 @@ export default {
 
 
     let MTCore = [];
-    const initST = async(i, file) => {
-      const rasterTile = await spawn(new Worker("./workers/rasterTile"));
-      await rasterTile.init();
-      MTCore.push(rasterTile);
-    }
-    const initMT = async(file) => {
-      const img = await blobToImg(file);
-      const imgInfo = getImgInfo(img, file.name);
-      const rasterTile = await spawn(new Worker("./workers/rasterTile"));
-      await rasterTile.init();
-      MTCore.push(rasterTile);
-      await asyncOffscreenCreateTiles({core: rasterTile, img, imgInfo}); 
-      // 多线程切割
-      currentTask.value++;
 
-      // const content = await rasterTile.generate();
-      // saveAs(content, `${zipName}.zip`);
-      uploadImgs.push(img);
-      return new Promise((resolve) => {
-        resolve()
-      })
-    }
-
-    const MTAddTiles = async(i, obj) => {
-      await MTCore[i].addTiles(obj);
+    const MTAddTiles = async(core, obj) => {
+      await core.addTiles(obj);
     }
     const initWebWorker = async() => {
       rasterTile = await spawn(new Worker("./workers/rasterTile"));
@@ -223,29 +208,19 @@ export default {
     }
 
     let useTime = ref(null);
-    const generateTiles = async() => {
-      const start = performance.now();
-      zipProgress.value = 0;
-      useTime.value = null;
-      getProgress(rasterTile);
-      const content = await rasterTile.generate();
-      saveAs(content, `${zipName}.zip`);
-      useTime.value = ((performance.now() - start) / 1000).toFixed(1);
-    }
 
     const asyncCoreGenerate = async(core) => {
       const content = await core.generate();
       // core.debugger();
       await Thread.terminate(core);
       return new Promise((resolve) => {
-        // saveAs(content, `${zipName}.zip`);
         console.log(content);
-        allBlob.push(content);
-        zip.file(`${Math.random()*100}.zip`, content, {binary: true});
-        resolve('success')
+        // allBlob.push(content.arrayBuffer());
+        zipTool.file(`${Math.random()*100}.zip`, content, {binary: true});
+        resolve()
       })
     }
-    const allBlob = [];
+    // const allBlob = [];
     const generateMTTiles = async() => {
       const start = performance.now();
       zipProgress.value = 0;
@@ -267,7 +242,7 @@ export default {
     }
     const saveZip = () => {
       return new Promise((resolve) => {
-        zip.generateAsync({type:"blob"}).then(function(content) {
+        zipTool.generateAsync({type:"blob"}).then(function(content) {
           saveAs(content, `${zipName}.zip`);
           resolve();
         });
@@ -302,23 +277,27 @@ export default {
       allTask.value = file.length;
       currentTask.value = 0;
 
-      if (isMT.value) {
-        // poolClip(file); // 线程池切割
-        // ---------- default
-        // STClip(file); // 浏览器切割
-        MTClip(file); // 多线程切割
-      } else {
-        // 单线程
+      if (selectThreading.value === 3) {
+        // 3 多线程切割
+        MTClip(file); 
+      } else if (selectThreading.value === 2) {
+        // 2 线程池切割
+        poolClip(file); 
+      } else if (selectThreading.value === 1) {
+        // 1 web worker保存+浏览器单线程切割
+        STClip(file); 
+      } else if (selectThreading.value === 0) {
+        // 0 全部单线程
         await initWebWorker();
         const startTime = performance.now();
         for (let i = 0; i < file.length; i++) {
           const img = await blobToImg(file[i]);
           const imgInfo = getImgInfo(img, file[i].name);
           uploadImgs.push(img);
-          await createTiles(null, img, imgInfo);
+          await createTiles(null, zipTool, img, imgInfo);
           currentTask.value++;
         }
-        console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
+        console.log(`单线程,切割了${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
       }
     }
     const poolClip = async(file) => {
@@ -337,14 +316,17 @@ export default {
       let startTime = performance.now();
       const asyncSTCore = [];
       for (let i = 0; i < file.length; i++) {
-        asyncSTCore.push(initST(i, file[i]));
+        asyncSTCore.push(initST({
+          cores: MTCore,
+          worker: await spawn(new Worker('./workers/rasterTile'))
+        }));
       }
       await Promise.all(asyncSTCore);
       for (let i = 0; i < file.length; i++) {
         const img = await blobToImg(file[i]);
         const imgInfo = getImgInfo(img, file[i].name);
         uploadImgs.push(img);
-        await createTiles(i, img, imgInfo); 
+        await createTiles(MTCore[i], zipTool, img, imgInfo); 
         // 单线程切割
         currentTask.value++;
       }
@@ -355,53 +337,20 @@ export default {
       let startTime = performance.now();
       const asyncMTCore = [];
       for (let i = 0; i < file.length; i++) {
-        asyncMTCore.push(initMT(file[i]));
+        const img = await blobToImg(file[i]);
+        asyncMTCore.push(initMT({
+          img: img,
+          fileName: file[i].name, 
+          cores: MTCore, 
+          worker: await spawn(new Worker('./workers/rasterTile')),
+        }, () => {
+          currentTask.value++;
+          uploadImgs.push(img);
+        }));
       }
       await Promise.all(asyncMTCore);
 
       console.log(`${allTask.value}个文件，共耗时：`, (performance.now() - startTime).toFixed() + 'ms');
-    }
-    /**
-     * @param {object} img blob转换的img对象
-     * @param {string} name blob转换img会丢失文件原本的名字，压缩文件需要区分各个文件名，所以在input的时候要带上
-     */
-    const getImgInfo = (img, name) => {
-      const referValue = 256;
-      const imgWidth = img.naturalWidth;
-      const imgHeight = img.naturalHeight;
-      const widthRatio = Math.ceil(imgWidth / referValue);
-      const heightRatio = Math.ceil(imgHeight / referValue);
-      return {
-        name,
-        referValue,
-        imgWidth,
-        imgHeight,
-        widthRatio,
-        heightRatio
-      }
-    }
-
-    /**
-     * @param {Number} a 
-     * @param {Number} b 
-     * 计算需要切片多少次
-     */
-    const getCount = (a, b) => {
-      return a >= b ? Math.ceil(Math.log2(a)) : Math.ceil(Math.log2(b));
-    }
-
-    /**
-     * @param {Number} core 核心下标
-     * @param {object} img 切片图片
-     * @param {object} imgInfo 图片基本信息
-     */
-    const asyncOffscreenCreateTiles = async({core, img, imgInfo}) => {
-      const offscreenCav = new OffscreenCanvas(256, 256);
-      const imageBitmap = await createImageBitmap(img, 0, 0, imgInfo.imgWidth, imgInfo.imgHeight);
-      await core.offscreenClip(Transfer(offscreenCav), Transfer(imageBitmap), imgInfo);
-      return new Promise((resolve) => {
-        resolve('success')
-      })
     }
 
     /**
@@ -413,7 +362,7 @@ export default {
      * @param {Number} widthRatio imgWidth / referValue
      * @param {Number} heightRatio imgHeight / referValue
      */
-    const createTiles = async(core, img, {name, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
+    const createTiles = async(core, zipTool, img, {name, imgWidth, imgHeight, referValue, widthRatio, heightRatio}) => {
       const referCav = document.createElement('canvas');
       referCav.width = 256;
       referCav.height = 256;
@@ -448,7 +397,7 @@ export default {
               });
             } else {
               addTiles({name, count, c, i, k, tilesBlob});
-              zip.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
+              zipTool.folder(`${name}`).folder(`${count - c}`).folder(`${i}`).file(`${k}.png`, tilesBlob, {binary: true});
             }
             referCtx.clearRect(0, 0, referValue, referValue);
             clipStatus.value = Math.floor(currentClip * 100 / totalClip);
@@ -460,7 +409,7 @@ export default {
     const downloadImgsZip = () => {
       useTime.value = null;
       const start = performance.now();
-      zip.generateAsync({type:"blob"}, function updateCallback(metadata) {
+      zipTool.generateAsync({type:"blob"}, function updateCallback(metadata) {
         zipProgress.value = metadata.percent;
         let performanceTime = performance.now() - start;
         useTime.value = (performanceTime / 1000).toFixed(1);
@@ -469,12 +418,12 @@ export default {
       });
     }
     return {
+      selectThreading,
       photoInput,
-      changeThread,
-      isMT,
+      chooseThread,
+      // isMT,
       changeUploadFile,
       downloadImgsZip,
-      generateTiles,
       clipStatus,
       uploadImgs,
       allTask,
@@ -544,6 +493,23 @@ export default {
     background-size: auto 100%;
     border-radius: 20px;
     width: 0;
+  }
+}
+.select_threading{
+  width: 800px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  cursor: pointer;
+  .select_btn{
+    padding: 4px 10px;
+    border-radius: 15px;
+    transition: all .5s ease-in-out;
+  }
+  .btn_selected{
+    background-color: #1eaf6d;
+    color: #fff;
   }
 }
 .mt_choose{
